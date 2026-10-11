@@ -1,0 +1,9 @@
+[Unit]
+Description=Porta TCP RAW para a fila adm-xerox (receptor CUPS)
+
+[Socket]
+ListenStream=9101
+Accept=yes
+
+[Install]
+WantedBy=sockets.target

@@ -1,0 +1,45 @@
+# --- Segredos e configuração real (NUNCA versionar) ---
+impressoras.json
+*.env
+.env
+*.pem
+*.key
+*.pfx
+*.crt
+*.keytab
+
+# --- Dados reais gerados em tempo de execução ---
+*.log
+*.log.*
+*.teste.log
+*.bak
+*.bak-*
+*.bak.*
+*.pcap
+*.pcapng
+
+# --- Pastas de trabalho com dados reais (nunca publicar) ---
+Nova pasta/
+*-ENTRADA/
+00-originais-privados/
+
+# --- Drivers e instaladores (baixe do site oficial do fabricante) ---
+drivers/
+*.inf
+*.cat
+*.dll
+*.msi
+*.exe
+
+# --- Python ---
+__pycache__/
+*.pyc
+
+# --- Arquivos de editor e de sistema ---
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

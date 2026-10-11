@@ -1,0 +1,5 @@
+# Salvar como /etc/systemd/system/cups-recebe-adm-xerox.socket.d/ip.conf
+# Restringe quem pode conectar na porta do receptor (sub-redes de exemplo).
+[Socket]
+IPAddressDeny=any
+IPAddressAllow=192.0.2.0/24 198.51.100.0/24 203.0.113.0/24

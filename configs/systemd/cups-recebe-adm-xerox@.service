@@ -1,0 +1,9 @@
+[Unit]
+Description=Receptor de job para a fila adm-xerox (%i)
+
+[Service]
+User=lp
+StandardInput=socket
+StandardOutput=null
+StandardError=journal
+ExecStart=/usr/local/bin/cups-recebe adm-xerox

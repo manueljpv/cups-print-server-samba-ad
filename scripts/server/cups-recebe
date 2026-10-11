@@ -1,0 +1,55 @@
+#!/usr/bin/python3
+# Receptor de porta TCP RAW -> CUPS.
+# Recebe o job enviado pelo Windows numa porta (ex.: 9101), extrai usuario e
+# titulo do cabecalho XPIF e entrega ao CUPS com "lp", passando pelo filtro.
+#
+# Uso (chamado pelo systemd): cups-recebe <fila>
+# Instalar em /usr/local/bin/cups-recebe (modo 755). Veja docs/03-entrega-por-gpo.md.
+import sys, os, re, tempfile, subprocess
+
+LIMITE = 65536
+
+
+def pega(tag, texto):
+    m = re.search(r'<%s(?:\s[^>]*)?>([^<]*)</%s>' % (tag, tag), texto)
+    return m.group(1).strip() if m else ""
+
+
+def main():
+    fila = sys.argv[1]
+    origem = os.environ.get("REMOTE_ADDR", "?")
+    fd, caminho = tempfile.mkstemp(prefix="recebe-", dir="/var/tmp")
+    head = b""
+    total = 0
+    try:
+        with os.fdopen(fd, "wb") as f:
+            while True:
+                chunk = sys.stdin.buffer.read(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+                total += len(chunk)
+                if len(head) < LIMITE:
+                    head += chunk[:LIMITE - len(head)]
+        if total == 0:
+            sys.stderr.write("recebe %s de %s: conexao vazia, ignorada\n" % (fila, origem))
+            return
+        h = head.decode("utf-8", "replace")   # utf-8: acentos do titulo (latin-1 quebrava os acentos)
+        user = pega("requesting-user-name", h) or pega("job-originating-user-name", h)
+        user = re.sub(r'[^A-Za-z0-9._@-]', '', user) or "desconhecido"
+        titulo = pega("job-name", h) or "Job porta TCP"
+        titulo = re.sub(r'[\x00-\x1f]', ' ', titulo)[:120]
+        r = subprocess.run(
+            ["lp", "-d", fila, "-U", user, "-t", titulo,
+             "-o", "document-format=application/postscript", caminho],
+            capture_output=True, text=True)
+        sys.stderr.write("recebe %s de %s: usuario=%s bytes=%d lp=%d %s%s\n" % (
+            fila, origem, user, total, r.returncode, r.stdout.strip(), r.stderr.strip()))
+    finally:
+        try:
+            os.unlink(caminho)
+        except OSError:
+            pass
+
+
+main()
