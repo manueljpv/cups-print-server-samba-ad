@@ -1,0 +1,8 @@
+[Unit]
+Description=Verificacao de saude do winbind e status da senha da maquina (srv-cups)
+After=winbind.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/troca-senha-maquina verificar
+SuccessExitStatus=3

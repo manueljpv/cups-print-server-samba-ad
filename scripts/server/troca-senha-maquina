@@ -1,0 +1,208 @@
+#!/usr/bin/python3
+# Troca controlada da senha da conta de maquina do srv-cups (SRV-CUPS$).
+# Uso:  troca-senha-maquina trocar     (troca, reinicia o winbind, testa, grava log e status)
+#       troca-senha-maquina verificar  (so testa; nao troca nem reinicia nada; atualiza o status)
+# Motivo: o winbind em execucao continua usando a senha antiga no Kerberos depois da troca;
+# o reinicio logo apos a troca resolve (ver docs/05-incidente-winbind-senha-de-maquina.md e docs/06-troca-controlada-winbind.md).
+import sys, os, re, json, time, fcntl
+import subprocess
+from datetime import datetime, timedelta
+
+CONTA = "SRV-CUPS"
+USUARIO_TESTE = "usuario.a"   # usuario do AD que deve estar no grupo de teste
+GRUPO_TESTE = "impressora_xerox_adm"   # grupo (minusculo) em que o usuario de teste deve estar
+HORA_AGENDADA = 4
+DIR_ESTADO = "/var/lib/troca-senha-maquina"
+ARQ_STATUS = DIR_ESTADO + "/status.json"
+ARQ_LOG = "/var/log/troca-senha-maquina.log"
+ARQ_LOCK = "/run/troca-senha-maquina.lock"
+FMT = "%Y-%m-%d %H:%M:%S"
+
+
+def agora():
+    return datetime.now()
+
+
+def iso(d):
+    return d.isoformat(timespec="seconds") if d else None
+
+
+def log(msg):
+    linha = "%s %s" % (agora().strftime(FMT), msg)
+    print(linha)
+    try:
+        with open(ARQ_LOG, "a", encoding="utf-8") as f:
+            f.write(linha + "\n")
+    except OSError:
+        pass
+
+
+def rodar(cmd, timeout=90):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.returncode, (r.stdout + r.stderr).strip()
+    except Exception as e:
+        return 99, "erro ao executar %s: %s" % (" ".join(cmd), e)
+
+
+def ultima_troca_ad():
+    rc, out = rodar(["net", "ads", "search", "-P", "(sAMAccountName=%s$)" % CONTA, "pwdLastSet"])
+    m = re.search(r"pwdLastSet:\s*(\d+)", out)
+    if rc != 0 or not m:
+        return None
+    segundos = int(m.group(1)) / 10000000 - 11644473600
+    return datetime.fromtimestamp(segundos)
+
+
+def proxima_agendada(ref):
+    # primeira segunda-feira de um mes, as HORA_AGENDADA:00, depois de "ref"
+    ano, mes = ref.year, ref.month
+    for _ in range(3):
+        primeiro = datetime(ano, mes, 1, HORA_AGENDADA, 0)
+        dia = 1 + (7 - primeiro.weekday()) % 7
+        alvo = primeiro.replace(day=dia)
+        if alvo > ref:
+            return alvo
+        mes += 1
+        if mes > 12:
+            mes, ano = 1, ano + 1
+    return None
+
+
+def esperar_winbind(tentativas=12):
+    for _ in range(tentativas):
+        rc, _ = rodar(["wbinfo", "-t"], timeout=30)
+        if rc == 0:
+            return True
+        time.sleep(5)
+    return False
+
+
+def testes(desde, limpar_cache):
+    res = []
+    rc, out = rodar(["net", "ads", "testjoin"])
+    ok = rc == 0 and "Join is OK" in out
+    res.append(("ingresso no dominio (testjoin)", ok, out.splitlines()[-1] if out else ""))
+    rc, out = rodar(["net", "ads", "status", "-P"])
+    ok = rc == 0 and "sAMAccountName" in out
+    res.append(("login Kerberos da conta de maquina (processo novo)", ok, "ok" if ok else out[:200]))
+    if limpar_cache:
+        rodar(["net", "cache", "flush"])
+    rc, out = rodar(["id", "-nG", USUARIO_TESTE])
+    ok = rc == 0 and GRUPO_TESTE in out.lower().split()
+    res.append(("winbind enxerga o grupo %s" % GRUPO_TESTE, ok, "ok" if ok else out[:200]))
+    rc, out = rodar(["journalctl", "-u", "winbind", "--since", desde, "--no-pager"])
+    n = out.count("Preauthentication failed")
+    res.append(("falhas Kerberos no winbind desde %s" % desde, rc == 0 and n == 0, "%d falhas" % n))
+    return res
+
+
+def ler_status():
+    try:
+        with open(ARQ_STATUS, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def gravar_status(modo, resultado, res, extras):
+    st = ler_status()
+    ref = agora()
+    troca = ultima_troca_ad()
+    st.update({
+        "gerado_em": iso(ref),
+        "modo": modo,
+        "resultado": resultado,
+        "testes": [{"nome": n, "ok": ok, "detalhe": d} for n, ok, d in res],
+        "ultima_troca_ad": iso(troca),
+        "dias_desde_troca": (ref - troca).days if troca else None,
+        "proxima_troca": iso(proxima_agendada(ref)),
+    })
+    st.update(extras)
+    os.makedirs(DIR_ESTADO, exist_ok=True)
+    tmp = ARQ_STATUS + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(st, f, ensure_ascii=False, indent=2)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, ARQ_STATUS)
+
+
+def trocar():
+    inicio = agora()
+    extras = {"ultima_execucao_trocar": iso(inicio)}
+    log("=== troca controlada: inicio ===")
+    rc, out = rodar(["net", "ads", "testjoin"])
+    if rc != 0 or "Join is OK" not in out:
+        log("ABORTADO: testjoin falhou antes da troca: " + out)
+        extras["ultimo_resultado_trocar"] = "falha"
+        gravar_status("trocar", "falha", [("ingresso no dominio antes da troca", False, out[:200])], extras)
+        return 1
+    rc, out = rodar(["wbinfo", "--change-secret"])
+    log("wbinfo --change-secret (rc=%d): %s" % (rc, out))
+    if rc != 0:
+        extras["ultimo_resultado_trocar"] = "falha"
+        gravar_status("trocar", "falha", [("troca da senha (wbinfo --change-secret)", False, out[:200])], extras)
+        return 1
+    time.sleep(5)
+    res = []
+    for tentativa in (1, 2):
+        rc, out = rodar(["systemctl", "restart", "winbind"])
+        log("reinicio do winbind, tentativa %d (rc=%d) %s" % (tentativa, rc, out))
+        log("winbind respondendo: %s" % esperar_winbind())
+        desde = agora().strftime(FMT)
+        time.sleep(3)
+        res = testes(desde, True)
+        for nome, ok, det in res:
+            log("  [%s] %s - %s" % ("OK" if ok else "FALHA", nome, det))
+        if all(ok for _, ok, _ in res):
+            break
+    resultado = "ok" if all(ok for _, ok, _ in res) else "falha"
+    extras["ultimo_resultado_trocar"] = resultado
+    if resultado == "ok":
+        extras["ultima_troca_ok"] = iso(agora())
+    gravar_status("trocar", resultado, res, extras)
+    log("=== troca controlada: fim (%s) ===" % resultado)
+    return 0 if resultado == "ok" else 1
+
+
+def inicio_winbind():
+    rc, out = rodar(["systemctl", "show", "winbind", "-p", "ActiveEnterTimestamp", "--value"])
+    m = re.search(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", out)
+    if rc != 0 or not m:
+        return None
+    return datetime.strptime(m.group(1), FMT)
+
+
+def verificar():
+    desde_dt = agora() - timedelta(hours=1)
+    ini = inicio_winbind()
+    if ini and ini > desde_dt:
+        desde_dt = ini
+    desde = desde_dt.strftime(FMT)
+    res = testes(desde, False)
+    resultado = "ok" if all(ok for _, ok, _ in res) else "falha"
+    if resultado != "ok":
+        log("verificacao com FALHA:")
+        for nome, ok, det in res:
+            log("  [%s] %s - %s" % ("OK" if ok else "FALHA", nome, det))
+    gravar_status("verificar", resultado, res, {})
+    return 0 if resultado == "ok" else 1
+
+
+def main():
+    if len(sys.argv) != 2 or sys.argv[1] not in ("trocar", "verificar"):
+        print("Uso: troca-senha-maquina trocar | verificar")
+        return 2
+    if os.geteuid() != 0:
+        print("Precisa rodar como root (use sudo).")
+        return 2
+    trava = open(ARQ_LOCK, "w")
+    try:
+        fcntl.flock(trava, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("Ja existe uma execucao em andamento.")
+        return 3
+    return trocar() if sys.argv[1] == "trocar" else verificar()
+
+
+sys.exit(main())

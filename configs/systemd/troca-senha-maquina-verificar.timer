@@ -1,0 +1,8 @@
+[Unit]
+Description=Verificacao horaria do winbind (minuto 7)
+
+[Timer]
+OnCalendar=*:07:00
+
+[Install]
+WantedBy=timers.target

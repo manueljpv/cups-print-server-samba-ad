@@ -1,0 +1,8 @@
+[Unit]
+Description=Troca controlada da senha da conta de maquina (srv-cups) e reinicio do winbind
+After=network-online.target winbind.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/troca-senha-maquina trocar

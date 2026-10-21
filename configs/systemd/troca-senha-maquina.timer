@@ -1,0 +1,9 @@
+[Unit]
+Description=Troca da senha da maquina: primeira segunda-feira do mes as 04:00
+
+[Timer]
+OnCalendar=Mon *-*-01..07 04:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

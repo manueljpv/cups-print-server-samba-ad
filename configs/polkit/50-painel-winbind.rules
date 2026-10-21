@@ -1,0 +1,10 @@
+// Painel de impressao: permite ao usuario "painel" iniciar SOMENTE a unit
+// troca-senha-maquina.service (troca controlada da senha de maquina). Nada mais.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "troca-senha-maquina.service" &&
+        action.lookup("verb") == "start" &&
+        subject.user == "painel") {
+        return polkit.Result.YES;
+    }
+});
