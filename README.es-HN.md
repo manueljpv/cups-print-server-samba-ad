@@ -216,6 +216,4 @@ Los valores de `impressoras.json.example` y de los archivos en `configs/` son so
 
 ## Licencia
 
-[GNU GPL v3.0](LICENSE).
-
-Mantenido por [@manueljpv](https://github.com/manueljpv).
+GPL-3.0. Vea el archivo [LICENSE](LICENSE). Copyright (C) 2026 Manuel Pérez.

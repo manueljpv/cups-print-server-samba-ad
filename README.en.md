@@ -216,6 +216,4 @@ The values in `impressoras.json.example` and in the files under `configs/` are p
 
 ## License
 
-[GNU GPL v3.0](LICENSE).
-
-Maintained by [@manueljpv](https://github.com/manueljpv).
+GPL-3.0. See the [LICENSE](LICENSE) file. Copyright (C) 2026 Manuel Pérez.

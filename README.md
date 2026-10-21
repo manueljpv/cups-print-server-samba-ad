@@ -216,6 +216,4 @@ Os valores de `impressoras.json.example` e dos arquivos em `configs/` são apena
 
 ## Licença
 
-[GNU GPL v3.0](LICENSE).
-
-Mantido por [@manueljpv](https://github.com/manueljpv).
+GPL-3.0. Veja o arquivo [LICENSE](LICENSE). Copyright (C) 2026 Manuel Pérez.
