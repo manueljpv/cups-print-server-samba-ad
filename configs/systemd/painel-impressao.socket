@@ -1,0 +1,11 @@
+[Unit]
+Description=Painel de Impressoes - socket (porta 8081, proxy reverso e tela de parede do carrossel)
+
+[Socket]
+ListenStream=192.0.2.10:8081
+FreeBind=true
+IPAddressDeny=any
+IPAddressAllow=192.0.2.8 192.0.2.10 127.0.0.1 192.0.2.96
+
+[Install]
+WantedBy=sockets.target

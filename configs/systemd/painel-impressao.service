@@ -1,0 +1,16 @@
+[Unit]
+Description=Painel de Impressoes (gunicorn)
+Requires=painel-impressao.socket
+After=painel-impressao.socket
+
+[Service]
+User=painel
+Group=painel
+WorkingDirectory=/opt/painel-impressao
+ExecStart=/opt/painel-impressao/venv/bin/gunicorn --workers 2 --access-logfile - app_novo:app
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/painel-impressao

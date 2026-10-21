@@ -7,6 +7,9 @@ impressoras.json
 *.pfx
 *.crt
 *.keytab
+senha-leitura
+chave-sessao
+*.db
 
 # --- Dados reais gerados em tempo de execução ---
 *.log

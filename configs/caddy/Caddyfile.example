@@ -1,0 +1,15 @@
+# Trecho de exemplo do proxy reverso (Caddy) para o painel. Valores fictícios.
+# O painel só deve ser alcançável pelas redes internas.
+impressoes.empresa.local {
+	tls internal            # certificado de uma CA interna; os PCs do domínio precisam confiar nela
+
+	@interno remote_ip 192.0.2.0/24 198.51.100.0/24 203.0.113.0/24
+	handle @interno {
+		reverse_proxy 192.0.2.10:8081    # o Caddy já envia o X-Forwarded-For que o painel usa
+	}
+
+	# qualquer outra origem: corta a conexão
+	handle {
+		abort
+	}
+}
