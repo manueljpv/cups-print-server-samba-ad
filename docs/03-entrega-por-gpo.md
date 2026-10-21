@@ -48,14 +48,14 @@ cupsenable adm-xerox
 Grupos criados no Samba AD (na OU de grupos):
 
 ```bash
-/usr/local/samba/bin/samba-tool group add Impressora_ADM_Xerox \
+/usr/local/samba/bin/samba-tool group add Impressora_Xerox_ADM \
     --groupou="OU=grupos,OU=EMPRESA" --group-scope=Global --group-type=Security
-/usr/local/samba/bin/samba-tool group add Impressora_ADM_Xerox_Cor \
+/usr/local/samba/bin/samba-tool group add Impressora_Xerox_ADM_Cor \
     --groupou="OU=grupos,OU=EMPRESA" --group-scope=Global --group-type=Security
 ```
 
-- `Impressora_ADM_Xerox`: quem usa a impressora (P&B).
-- `Impressora_ADM_Xerox_Cor`: também pode imprimir colorido. Quem está no `_Cor` também conta como autorizado a usar a impressora.
+- `Impressora_Xerox_ADM`: quem usa a impressora (P&B).
+- `Impressora_Xerox_ADM_Cor`: também pode imprimir colorido. Quem está no `_Cor` também conta como autorizado a usar a impressora.
 - O servidor enxerga os grupos pelo winbind (`id usuario`). O cache do winbind pode demorar alguns minutos para atualizar; `net cache flush` força.
 
 O bloqueio por usuário nativo do CUPS (`lpadmin -u allow:@grupo`) não funcionou com winbind; o controle ficou no filtro e na GPO.
@@ -64,7 +64,7 @@ O bloqueio por usuário nativo do CUPS (`lpadmin -u allow:@grupo`) não funciono
 
 Em vez de uma fila "do usuário", o desenho usa uma **tarefa agendada de computador** (Preferências da GPO) que roda um script no logon:
 
-- GPO vinculada à OU dos computadores que participam do piloto; filtro de segurança por **grupo de computadores** (`Impressora_CUPS_PCs`) em vez de listar PCs um a um (mantendo "Authenticated Users" com Leitura na Delegação).
+- GPO vinculada à OU dos computadores que participam do piloto; filtro de segurança por **grupo de computadores** (`Impressora_Xerox_ADM_PCs`) em vez de listar PCs um a um (mantendo "Authenticated Users" com Leitura na Delegação).
 - Tarefa `Sync-Impressoras`: ação **Atualizar**, conta **NT AUTHORITY\SYSTEM** com privilégios mais altos, disparador **Ao fazer logon, qualquer usuário, com atraso de 30 segundos** (sem atraso o usuário ainda não aparece no `Win32_ComputerSystem`), executando por demanda, interrompendo após 1 hora, sem iniciar nova instância, sem exigir rede elétrica.
 - Ação: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "\\empresa.local\NETLOGON\scripts\Impressoras\CUPS\Sync-Impressoras.ps1" -ConfigPath "\\empresa.local\NETLOGON\scripts\Impressoras\CUPS\impressoras.json"`
 - Scripts de PowerShell devem ser adicionados na aba **"PowerShell Scripts"** do GPMC, nunca na aba legada "Scripts" (o Windows tenta abrir o `.ps1` no Bloco de Notas em vez de executar).

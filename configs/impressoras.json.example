@@ -6,7 +6,7 @@
     "porta": "IP_192.0.2.10_9101",
     "host": "192.0.2.10",
     "portaTcp": 9101,
-    "grupoAcesso": "Impressora_ADM_Xerox",
-    "grupoCor": "Impressora_ADM_Xerox_Cor"
+    "grupoAcesso": "Impressora_Xerox_ADM",
+    "grupoCor": "Impressora_Xerox_ADM_Cor"
   }
 ]

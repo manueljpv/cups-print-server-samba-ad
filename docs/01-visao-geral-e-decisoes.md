@@ -38,7 +38,7 @@ Construir do zero um servidor de impressão **CUPS em Linux** para uma empresa q
 
 O nome entra no endereço da fila, na coluna "fila" do log de contabilidade e na GPO. Trocá-lo depois divide o histórico. Dois equipamentos no mesmo local: acrescentar número (`prod-canon-2`). Descrição (`-D`) e local (`-L`) são texto livre.
 
-Padrão de grupos no AD: `Impressora_<LOCAL>_<MARCA>` (quem usa, P&B) e `Impressora_<LOCAL>_<MARCA>_Cor` (também pode colorido).
+Padrão de grupos no AD: `Impressora_<MARCA>_<LOCAL>` (quem usa, P&B) e `Impressora_<MARCA>_<LOCAL>_Cor` (também pode colorido).
 
 ## Por que não as alternativas (testes)
 

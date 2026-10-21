@@ -34,7 +34,16 @@ Un servidor de impresión **CUPS en Linux** integrado a un dominio **Samba AD**,
 - Quita las impresoras que el usuario no puede usar y, opcionalmente, limpia las demás (Canon, XPS, Fax, etc.).
 - Una impresora nueva es una línea más en `impressoras.json`.
 
-**4. Documentación y lecciones aprendidas (`docs/`)**
+**4. Cambio controlado de la contraseña de la cuenta de máquina (`scripts/server/troca-senha-maquina` + `configs/systemd/`)**
+
+- Desactiva el cambio automático de Samba y lo sustituye por un cambio programado que **reinicia winbind**, verifica que los grupos sigan visibles y escribe un estado en JSON.
+- Resuelve el incidente en que todos los usuarios empezaron a imprimir en blanco y negro. Vea el [doc 06](docs/06-troca-controlada-winbind.md) (en portugués).
+
+**5. Panel web (`painel/`)**
+
+- Una aplicación Flask interna, con inicio de sesión del AD (LDAPS) y acceso por grupo. Hoy ofrece **permisos de impresión** (quién puede usar cada impresora, por usuario, departamento, impresora y equipo; solo lectura) y **control de winbind** (salud, último cambio y botón de cambio). Vea el [doc 07](docs/07-painel-web.md) (en portugués).
+
+**6. Documentación y lecciones aprendidas (`docs/`)**
 
 - Decisiones y pruebas que descartaron las alternativas, problemas comunes y un estudio de caso de un incidente (winbind sin grupos tras el cambio de contraseña de la cuenta de máquina).
 
@@ -112,9 +121,9 @@ El archivo del trabajo pasa por CUPS sin convertirse, porque el driver de Xerox 
 5. **Cree los grupos en el AD**, en el controlador de dominio (uno de acceso y uno de color):
 
    ```bash
-   /usr/local/samba/bin/samba-tool group add Impressora_ADM_Xerox \
+   /usr/local/samba/bin/samba-tool group add Impressora_Xerox_ADM \
        --groupou="OU=grupos,OU=EMPRESA" --group-scope=Global --group-type=Security
-   /usr/local/samba/bin/samba-tool group add Impressora_ADM_Xerox_Cor \
+   /usr/local/samba/bin/samba-tool group add Impressora_Xerox_ADM_Cor \
        --groupou="OU=grupos,OU=EMPRESA" --group-scope=Global --group-type=Security
    ```
 
@@ -156,7 +165,7 @@ El archivo del trabajo pasa por CUPS sin convertirse, porque el driver de Xerox 
 | HTTP 403 al acceder a CUPS | El `<Location />` solo permite una subred | Agregue un `Allow` por subred de usuarios y reinicie CUPS |
 | El trabajo sale con decenas de páginas de "códigos" y sin PIN | CUPS clasificó el archivo como `text/plain` y descartó el encabezado | Agregue `*cupsFilter: "text/plain 0 xerox-contagem"` al PPD (vea el doc 04) |
 | "No llegó nada a la impresora" | El trabajo está retenido esperando el PIN | Revise el panel de la Xerox antes de culpar al driver |
-| Todos los usuarios salen en blanco y negro | winbind dejó de ver los grupos (cambio de contraseña de la cuenta de máquina) | `systemctl restart winbind`; vea el [estudio de caso](docs/05-incidente-winbind-senha-de-maquina.md) |
+| Todos los usuarios salen en blanco y negro | winbind dejó de ver los grupos (cambio de contraseña de la cuenta de máquina) | `systemctl restart winbind`; vea el [estudio de caso](docs/05-incidente-winbind-senha-de-maquina.md) y el [cambio controlado](docs/06-troca-controlada-winbind.md), que lo evita |
 | La contabilidad dejó de registrar, sin error | Carpeta o registro con propietario equivocado (prueba hecha como root) | `chown lp:lp` en la carpeta y en los archivos |
 | Las preferencias del driver volvieron a color y sin PIN | `Rename-Printer` restablece los valores predeterminados | Cree la cola ya con su nombre final y solo después aplique los predeterminados |
 | El PowerShell "como administrador" no ve el dominio ni `NETLOGON` | El administrador local es una cuenta local | Pruebe con una tarea programada como `SYSTEM` o con el PowerShell del usuario de dominio |
@@ -178,7 +187,8 @@ Más casos en [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md) (en p
 - El PIN dentro del archivo del trabajo es solo una **codificación simple**, no cifrado. Mantenga `PreserveJobFiles` desactivado en producción y la carpeta de spool protegida.
 - Haga **respaldo de SYSVOL (con permisos)** antes de actualizar Samba, sobre todo si se instaló desde un tarball.
 - Escriba en `NETLOGON` solo como administrador del dominio; los equipos solo necesitan lectura.
-- La contraseña de la cuenta de máquina del servidor se cambia automáticamente cada 7 días (valor predeterminado de Samba) y eso puede romper la lectura de grupos. Monitoréelo y reinicie winbind si hace falta.
+- La contraseña de la cuenta de máquina del servidor se cambia automáticamente cada 7 días (valor predeterminado de Samba) y eso puede romper la lectura de grupos: el winbind en ejecución sigue con la contraseña anterior. Desactive el cambio automático y use el [cambio controlado](docs/06-troca-controlada-winbind.md).
+- El panel web debe quedar detrás de un proxy que acepte solo las redes internas y **nunca** exponerse a internet. No versione la contraseña de la cuenta de lectura ni la llave de sesión.
 - Nunca versione archivos `impressoras.json` reales, registros de contabilidad, llaves ni certificados (el `.gitignore` ya los bloquea).
 
 ## Documentación y roadmap
@@ -188,6 +198,8 @@ Más casos en [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md) (en p
 - [`docs/03-entrega-por-gpo.md`](docs/03-entrega-por-gpo.md): puerto TCP, grupos, GPO y el script de sincronización.
 - [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md): problemas y soluciones.
 - [`docs/05-incidente-winbind-senha-de-maquina.md`](docs/05-incidente-winbind-senha-de-maquina.md): estudio de caso.
+- [`docs/06-troca-controlada-winbind.md`](docs/06-troca-controlada-winbind.md): causa confirmada y solución del cambio de la contraseña de la cuenta de máquina.
+- [`docs/07-painel-web.md`](docs/07-painel-web.md): panel web (permisos, winbind, instalación).
 - [`ROADMAP.es-HN.md`](ROADMAP.es-HN.md): mejoras futuras.
 
 La carpeta `docs/` está disponible solo en portugués.

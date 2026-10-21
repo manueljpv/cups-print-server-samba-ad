@@ -12,7 +12,7 @@ import sys, re, os, time, subprocess
 LOG = "/var/log/cups-contabilidade/contagem-%s.log"
 LIMITE = 65536
 GRUPOS_COR = {
-    "adm-xerox": "impressora_adm_xerox_cor",
+    "adm-xerox": "impressora_xerox_adm_cor",
 }
 FILAS_PIN = {"adm-xerox"}
 RE_COR = re.compile(rb'(<color-effects-type[^>]*>)color(</color-effects-type>)')

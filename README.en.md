@@ -34,7 +34,16 @@ A **Linux CUPS print server** integrated with a **Samba AD** domain, for organiz
 - Removes printers the user may not use and, optionally, cleans up all the others (Canon, XPS, Fax, etc.).
 - A new printer is one more entry in `impressoras.json`.
 
-**4. Documentation and lessons learned (`docs/`)**
+**4. Controlled machine account password change (`scripts/server/troca-senha-maquina` + `configs/systemd/`)**
+
+- Turns off Samba's automatic rotation and replaces it with a scheduled change that **restarts winbind**, checks that the groups are still visible and writes a JSON status.
+- Fixes the incident in which every user started printing in B&W. See [doc 06](docs/06-troca-controlada-winbind.md) (Portuguese).
+
+**5. Web panel (`painel/`)**
+
+- An internal Flask application with AD login (LDAPS) and group-based access. Today it provides **printing permissions** (who may use each printer, by user, department, printer and computer; read-only) and **winbind control** (health, last change and a change button). See [doc 07](docs/07-painel-web.md) (Portuguese).
+
+**6. Documentation and lessons learned (`docs/`)**
 
 - Decisions and tests that ruled out the alternatives, common problems, and an incident case study (winbind without groups after the machine account password rotation).
 
@@ -112,9 +121,9 @@ The job file goes through CUPS without being converted, because the Xerox driver
 5. **Create the AD groups**, on the domain controller (one for access and one for color):
 
    ```bash
-   /usr/local/samba/bin/samba-tool group add Impressora_ADM_Xerox \
+   /usr/local/samba/bin/samba-tool group add Impressora_Xerox_ADM \
        --groupou="OU=grupos,OU=EMPRESA" --group-scope=Global --group-type=Security
-   /usr/local/samba/bin/samba-tool group add Impressora_ADM_Xerox_Cor \
+   /usr/local/samba/bin/samba-tool group add Impressora_Xerox_ADM_Cor \
        --groupou="OU=grupos,OU=EMPRESA" --group-scope=Global --group-type=Security
    ```
 
@@ -156,7 +165,7 @@ The job file goes through CUPS without being converted, because the Xerox driver
 | HTTP 403 when accessing CUPS | `<Location />` allows only one subnet | Add one `Allow` per user subnet and restart CUPS |
 | The job prints dozens of pages of "codes" and has no PIN | CUPS classified the file as `text/plain` and discarded the header | Add `*cupsFilter: "text/plain 0 xerox-contagem"` to the PPD (see doc 04) |
 | "Nothing reached the printer" | The job is held waiting for the PIN | Check the Xerox panel before blaming the driver |
-| Every user prints in B&W | winbind stopped seeing the groups (machine account password rotation) | `systemctl restart winbind`; see the [case study](docs/05-incidente-winbind-senha-de-maquina.md) |
+| Every user prints in B&W | winbind stopped seeing the groups (machine account password rotation) | `systemctl restart winbind`; see the [case study](docs/05-incidente-winbind-senha-de-maquina.md) and the [controlled change](docs/06-troca-controlada-winbind.md), which prevents it |
 | Accounting stopped writing, with no error | Folder or log with the wrong owner (test run as root) | `chown lp:lp` on the folder and the files |
 | Driver preferences went back to color and no PIN | `Rename-Printer` resets the defaults | Create the queue already with its final name and only then apply the defaults |
 | "Run as administrator" PowerShell cannot see the domain or `NETLOGON` | The local administrator is a local account | Test with a scheduled task as `SYSTEM` or with the domain user's PowerShell |
@@ -178,7 +187,8 @@ More cases in [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md) (Port
 - The PIN inside the job file is only a **simple encoding**, not encryption. Keep `PreserveJobFiles` off in production and the spool folder protected.
 - Back up **SYSVOL (with permissions)** before upgrading Samba, especially if it was installed from a tarball.
 - Write to `NETLOGON` only as a domain administrator; computers only need read access.
-- The server's machine account password is rotated automatically every 7 days (Samba default) and this can break group lookups. Monitor it and restart winbind if needed.
+- The server's machine account password is rotated automatically every 7 days (Samba default) and this can break group lookups: the running winbind keeps using the old password. Turn the automatic rotation off and use the [controlled change](docs/06-troca-controlada-winbind.md).
+- The web panel must sit behind a proxy that accepts internal networks only and must **never** be exposed to the internet. Do not commit the read-account password or the session key.
 - Never commit real `impressoras.json` files, accounting logs, keys or certificates (the `.gitignore` already blocks them).
 
 ## Documentation and roadmap
@@ -188,6 +198,8 @@ More cases in [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md) (Port
 - [`docs/03-entrega-por-gpo.md`](docs/03-entrega-por-gpo.md): TCP port, groups, GPO and the sync script.
 - [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md): problems and solutions.
 - [`docs/05-incidente-winbind-senha-de-maquina.md`](docs/05-incidente-winbind-senha-de-maquina.md): case study.
+- [`docs/06-troca-controlada-winbind.md`](docs/06-troca-controlada-winbind.md): confirmed cause and solution for the machine account password change.
+- [`docs/07-painel-web.md`](docs/07-painel-web.md): web panel (permissions, winbind, installation).
 - [`ROADMAP.en.md`](ROADMAP.en.md): future improvements.
 
 The `docs/` folder is available in Portuguese only.
