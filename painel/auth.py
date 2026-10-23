@@ -50,6 +50,11 @@ def _db():
     con.execute("CREATE TABLE IF NOT EXISTS sessoes ("
                 "hash TEXT PRIMARY KEY, usuario TEXT, nome TEXT, grupos TEXT, "
                 "criada REAL, ultima REAL)")
+    con.execute("CREATE TABLE IF NOT EXISTS lista_alteracoes ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, ator TEXT, impressora TEXT, "
+                "login TEXT, nivel TEXT, criado REAL, UNIQUE(ator, impressora, login))")
+    con.execute("CREATE TABLE IF NOT EXISTS ultimo_lote ("
+                "ator TEXT PRIMARY KEY, json TEXT, quando REAL)")
     return con
 
 
@@ -192,6 +197,9 @@ def autenticar(usuario, senha, origem):
     try:
         con.execute("INSERT INTO sessoes VALUES (?,?,?,?,?,?)",
                     (_hash(token), usuario.lower(), nome, ",".join(pp), agora, agora))
+        # lista de alteracoes e resultado de lote nao atravessam logins
+        con.execute("DELETE FROM lista_alteracoes WHERE ator=?", (usuario.lower(),))
+        con.execute("DELETE FROM ultimo_lote WHERE ator=?", (usuario.lower(),))
         con.execute("DELETE FROM sessoes WHERE ultima < ?", (agora - MAXIMO_S,))
         con.commit()
     finally:
@@ -229,9 +237,14 @@ def sessao(token):
 def encerrar(token):
     if not token:
         return
+    h = _hash(token)
     con = _db()
     try:
-        con.execute("DELETE FROM sessoes WHERE hash=?", (_hash(token),))
+        lin = con.execute("SELECT usuario FROM sessoes WHERE hash=?", (h,)).fetchone()
+        if lin:
+            con.execute("DELETE FROM lista_alteracoes WHERE ator=?", (lin[0],))
+            con.execute("DELETE FROM ultimo_lote WHERE ator=?", (lin[0],))
+        con.execute("DELETE FROM sessoes WHERE hash=?", (h,))
         con.commit()
     finally:
         con.close()
@@ -262,3 +275,58 @@ def reautenticar(usuario, senha, origem):
         return False, "senha"
     _limpar_falhas(usuario, origem)
     return True, None
+
+
+# ---------- escrita no AD com a conta de quem esta logado ----------
+
+def conexao_usuario(usuario, senha, origem):
+    """Abre uma conexao LDAPS com a senha de quem esta logado, para ESCREVER no AD.
+
+    Devolve (conexao, None) ou (None, codigo), codigo em: senha, bloqueado, ldap.
+    Quem chama e responsavel por fechar (unbind). A senha nao e guardada em lugar nenhum.
+    Conta nas mesmas tentativas do login (5 erros bloqueiam 5 min). Exige o papel TI.
+    """
+    if not senha:
+        return None, "senha"
+    resto = bloqueado(usuario, origem)
+    if resto:
+        auditar("reauth_bloqueado", usuario, origem, f"{resto}s restantes")
+        return None, "bloqueado"
+    con = None
+    try:
+        tls = Tls(validate=ssl.CERT_REQUIRED, version=ssl.PROTOCOL_TLS_CLIENT, ca_certs_file=CA)
+        srv = Server(DC, port=636, use_ssl=True, tls=tls, connect_timeout=5)
+        con = Connection(srv, user=f"{usuario}@{DOMINIO}", password=senha,
+                         authentication=SIMPLE, receive_timeout=15, raise_exceptions=False)
+        if not con.bind():
+            _registrar_falha(usuario, origem)
+            auditar("reauth_falhou", usuario, origem)
+            return None, "senha"
+        con.search(BASE, f"(sAMAccountName={escape_filter_chars(usuario)})",
+                   attributes=["memberOf"])
+        if not con.entries:
+            _registrar_falha(usuario, origem)
+            auditar("reauth_falhou", usuario, origem)
+            _fechar(con)
+            return None, "senha"
+        grupos = sorted({_cn(str(g)) for g in con.entries[0].memberOf.values})
+        if "ti" not in papeis(grupos):
+            _registrar_falha(usuario, origem)
+            auditar("reauth_falhou", usuario, origem, "sem papel ti")
+            _fechar(con)
+            return None, "senha"
+    except (LDAPException, OSError, ssl.SSLError) as e:
+        auditar("erro_ldap", usuario, origem, type(e).__name__)
+        _fechar(con)
+        return None, "ldap"
+    _limpar_falhas(usuario, origem)
+    return con, None
+
+
+def _fechar(con):
+    if con is None:
+        return
+    try:
+        con.unbind()
+    except Exception:
+        pass

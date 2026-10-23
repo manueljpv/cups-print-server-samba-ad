@@ -235,6 +235,40 @@ table.t{width:100%;border-collapse:collapse;font-size:14px}
 .busca input:focus{outline:3px solid var(--focus);outline-offset:1px}
 .acao.depto summary .chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 
+/* etapa 2a: lista de alteracoes */
+.t th.chk,.t td.chk{padding:9px 0 9px 14px;text-align:center}
+.t th.chk{padding-top:8px;padding-bottom:8px}
+.chk input{width:18px;height:18px;accent-color:var(--btn);cursor:pointer}
+.so-leitor{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.barra-acao{display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:14px 18px}
+.barra-acao .campo{flex:1 1 280px;min-width:0}
+.barra-acao .nota{flex:1 1 100%;margin:0;font-size:13px;color:var(--muted)}
+.campo select{width:100%;height:42px;padding:0 10px;border-radius:9px;border:1px solid var(--line);
+ background:var(--surface);color:var(--fg);font:inherit}
+.campo select:focus{outline:3px solid var(--focus);outline-offset:1px}
+.lista-alt,.lote{overflow:hidden}
+.lista-alt form.aplicar{padding:14px 18px;border-top:1px solid var(--line);margin:0}
+.linha-form.dois{grid-template-columns:minmax(0,1fr) auto}
+.lista-alt form.esvazia,.lote form.fecha{padding:0 18px 14px;margin:0}
+.btn-sec{height:36px;padding:0 14px;border-radius:9px;border:1px solid var(--line);background:transparent;
+ color:var(--fg);font:inherit;font-weight:600;cursor:pointer}
+.btn-sec:hover{border-color:var(--faint)}
+.btn-sec:focus-visible,.mini:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
+.mini{height:30px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:transparent;
+ color:var(--fg);font:inherit;font-size:13px;cursor:pointer}
+.mini:hover{border-color:var(--crit);color:var(--crit-fg)}
+.t td.acoes-l{text-align:right;white-space:nowrap}
+.t td.acoes-l form{margin:0}
+.passo{margin-top:2px}
+/* etapa 2c: sugestoes do GLPI dentro da lista */
+.sug{border-top:1px solid var(--line)}
+.pc-op{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:3px 0;cursor:pointer}
+.pc-op input{width:18px;height:18px;accent-color:var(--btn);cursor:pointer}
+.pc-op input:disabled{cursor:default}
+/* etapa 2b: computadores */
+.rodape-acao{padding:12px 18px;border-top:1px solid var(--line)}
+.rodape-acao .sub-t{margin-left:12px}
+
 @media (max-width:640px){
  .linha-form{grid-template-columns:1fr}
  .estado{grid-template-columns:1fr}
