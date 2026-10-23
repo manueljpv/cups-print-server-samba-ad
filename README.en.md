@@ -22,17 +22,20 @@ A **Linux CUPS print server** integrated with a **Samba AD** domain, for organiz
 - **Color control by AD group:** users who request color without being in the authorized group get B&W, without losing the job.
 - **Mandatory PIN:** a job without a PIN is silently rejected and logged.
 - One log file per month, TAB-separated, ready to feed reports.
+- For **HP** printers (PostScript, no PIN and no color) there is a variant, `scripts/server/hp-contagem`, which reads `%%Pages`, `NumCopies` and duplex from the file itself and writes to the same log. See [doc 08](docs/08-adicionar-impressora-hp.md) (Portuguese).
 
 **2. TCP port receiver (`scripts/server/cups-recebe` + `configs/systemd/`)**
 
 - Receives the job from Windows on a RAW TCP port (one per queue, for example 9101) and hands it to CUPS, going through the filter.
 - Managed by systemd, with source restriction by subnet.
+- For HP, `scripts/server/cups-recebe-pjl` reads the user and the title from the driver's PJL header.
 
 **3. Automatic delivery through GPO (`scripts/windows/Sync-Impressoras.ps1`)**
 
 - A scheduled task that runs at logon as `SYSTEM`: reads the user's groups in AD, installs the V4 PS driver, creates the port and the queue with a friendly name, applies **B&W as the default** and turns the **PIN** on.
 - Removes printers the user may not use and, optionally, cleans up all the others (Canon, XPS, Fax, etc.).
 - A new printer is one more entry in `impressoras.json`.
+- It also checks each printer's **computer** group (`grupoPCs`), installs only the `.inf` named in the entry (`inf`) and skips the PIN when `pin` is `false`.
 
 **4. Controlled machine account password change (`scripts/server/troca-senha-maquina` + `configs/systemd/`)**
 
@@ -41,7 +44,7 @@ A **Linux CUPS print server** integrated with a **Samba AD** domain, for organiz
 
 **5. Web panel (`painel/`)**
 
-- An internal Flask application with AD login (LDAPS) and group-based access. Today it provides **printing permissions** (who may use each printer, by user, department, printer and computer; read-only) and **winbind control** (health, last change and a change button). See [doc 07](docs/07-painel-web.md) (Portuguese).
+- An internal Flask application with AD login (LDAPS) and group-based access. Today it provides **printing permissions** (who may use each printer, by user, department, printer and computer), with **changing the AD groups** straight from the panel (a batch list of changes, applied with the logged-in user's own password, no stored write account, and with each user's computer suggested by GLPI), and **winbind control** (health, last change and a change button). See [doc 07](docs/07-painel-web.md) (Portuguese).
 
 **6. Documentation and lessons learned (`docs/`)**
 
@@ -80,6 +83,7 @@ The job file goes through CUPS without being converted, because the Xerox driver
 **Printer**
 
 - A Xerox with PIN-protected printing (the project used the **AltaLink C8030**), reachable over IPP.
+- **HP LaserJet with PostScript, no PIN and no color** is also supported (validated on the M428f, with the HP Universal Print Driver PS): see [doc 08](docs/08-adicionar-impressora-hp.md) (Portuguese).
 - Other brands require testing what the driver writes into the job file before reusing the filter.
 
 **Domain and clients**
@@ -137,6 +141,8 @@ The job file goes through CUPS without being converted, because the Xerox driver
    systemctl daemon-reload && systemctl enable --now cups-recebe-adm-xerox.socket
    ```
 
+For an **HP** printer, the full steps (filter, receiver, queue, port and GPO) are in [doc 08](docs/08-adicionar-impressora-hp.md) (Portuguese).
+
 ### 2. Windows clients (GPO)
 
 1. Put the V4 PS driver package (unzipped) in a folder readable by **Domain Computers** (the examples use `\\empresa.local\NETLOGON\Impressoras\XeroxV4PS`).
@@ -169,6 +175,8 @@ The job file goes through CUPS without being converted, because the Xerox driver
 | Accounting stopped writing, with no error | Folder or log with the wrong owner (test run as root) | `chown lp:lp` on the folder and the files |
 | Driver preferences went back to color and no PIN | `Rename-Printer` resets the defaults | Create the queue already with its final name and only then apply the defaults |
 | "Run as administrator" PowerShell cannot see the domain or `NETLOGON` | The local administrator is a local account | Test with a scheduled task as `SYSTEM` or with the domain user's PowerShell |
+| `pnputil` fails with "the publisher of an Authenticode signed catalog has not yet been established as trusted" | The driver vendor's certificate is not in Trusted Publishers | Import the certificate through the GPO (see [doc 08](docs/08-adicionar-impressora-hp.md), Portuguese) |
+| The printer does not show up after adding the PC to the `_PCs` group | A computer group only reaches the token after the PC restarts | Restart the PC and check with `gpresult /scope computer /r` |
 | Cannot remove the queue and the driver right after each other | The spooler is holding the items | Wait, or `Restart-Service Spooler` and wait ~20 s |
 
 More cases in [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md) (Portuguese).
@@ -179,7 +187,7 @@ More cases in [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md) (Port
 - Color and copies reflect what the driver requested, not a page-by-page analysis.
 - The user name comes from Windows and is **not validated** by the server.
 - Raw queues and PPD drivers are marked as deprecated by CUPS. On CUPS 2.4 (Ubuntu 24.04) this does not affect anything today, but it is a long-term risk.
-- The filter was validated with Xerox (XPIF header). Other brands need testing.
+- The filter was validated with Xerox (XPIF header) and HP (PJL header); on HP, reading duplex with duplex turned on was not validated. Other brands need testing.
 
 ## Security
 
@@ -188,7 +196,8 @@ More cases in [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md) (Port
 - Back up **SYSVOL (with permissions)** before upgrading Samba, especially if it was installed from a tarball.
 - Write to `NETLOGON` only as a domain administrator; computers only need read access.
 - The server's machine account password is rotated automatically every 7 days (Samba default) and this can break group lookups: the running winbind keeps using the old password. Turn the automatic rotation off and use the [controlled change](docs/06-troca-controlada-winbind.md).
-- The web panel must sit behind a proxy that accepts internal networks only and must **never** be exposed to the internet. Do not commit the read-account password or the session key.
+- The web panel must sit behind a proxy that accepts internal networks only and must **never** be exposed to the internet. Do not commit the read-account password, the GLPI tokens or the session key.
+- The panel's permission buttons change AD with the **logged-in user's own password**, asked for at that moment, with no write account stored on the server. Delegate to the IT group only write access to the `member` property of the `Impressora_*` groups; being a domain administrator is not required (see [doc 07](docs/07-painel-web.md), Portuguese).
 - Never commit real `impressoras.json` files, accounting logs, keys or certificates (the `.gitignore` already blocks them).
 
 ## Documentation and roadmap
@@ -199,7 +208,8 @@ More cases in [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md) (Port
 - [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md): problems and solutions.
 - [`docs/05-incidente-winbind-senha-de-maquina.md`](docs/05-incidente-winbind-senha-de-maquina.md): case study.
 - [`docs/06-troca-controlada-winbind.md`](docs/06-troca-controlada-winbind.md): confirmed cause and solution for the machine account password change.
-- [`docs/07-painel-web.md`](docs/07-painel-web.md): web panel (permissions, winbind, installation).
+- [`docs/07-painel-web.md`](docs/07-painel-web.md): web panel (permissions, changing the groups, GLPI, winbind, installation).
+- [`docs/08-adicionar-impressora-hp.md`](docs/08-adicionar-impressora-hp.md): how to add an HP printer (no PIN, no color), from the server to the GPO.
 - [`ROADMAP.en.md`](ROADMAP.en.md): future improvements.
 
 The `docs/` folder is available in Portuguese only.

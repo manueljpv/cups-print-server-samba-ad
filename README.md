@@ -22,17 +22,20 @@ Servidor de impressão **CUPS em Linux** integrado a um domínio **Samba AD**, p
 - **Controle de cor por grupo do AD:** quem pede colorido sem estar no grupo autorizado recebe P&B, sem perder o trabalho.
 - **PIN obrigatório:** job sem PIN é rejeitado em silêncio e registrado.
 - Um arquivo de log por mês, com campos separados por TAB, pronto para alimentar relatórios.
+- Para impressoras **HP** (PostScript, sem PIN e sem cor) há uma variante, `scripts/server/hp-contagem`, que lê `%%Pages`, `NumCopies` e a frente e verso no próprio arquivo e grava no mesmo log. Veja o [doc 08](docs/08-adicionar-impressora-hp.md).
 
 **2. Receptor de porta TCP (`scripts/server/cups-recebe` + `configs/systemd/`)**
 
 - Recebe o job do Windows numa porta TCP RAW (uma por fila, por exemplo 9101) e o entrega ao CUPS, passando pelo filtro.
 - Controlado pelo systemd, com restrição de origem por sub-rede.
+- Para a HP, o `scripts/server/cups-recebe-pjl` lê o usuário e o título do cabeçalho PJL do driver.
 
 **3. Entrega automática por GPO (`scripts/windows/Sync-Impressoras.ps1`)**
 
 - Tarefa agendada que roda no logon como `SYSTEM`: lê os grupos do usuário no AD, instala o driver V4 PS, cria a porta e a fila com nome amigável, aplica **P&B como padrão** e liga o **PIN**.
 - Remove as impressoras que o usuário não pode usar e, opcionalmente, limpa as demais (Canon, XPS, Fax etc.).
 - Uma impressora nova é uma linha em `impressoras.json`.
+- Confere também o grupo de **computadores** de cada impressora (`grupoPCs`), instala só o `.inf` indicado (`inf`) e dispensa o PIN quando `pin` é `false`.
 
 **4. Troca controlada da senha da conta de máquina (`scripts/server/troca-senha-maquina` + `configs/systemd/`)**
 
@@ -41,7 +44,7 @@ Servidor de impressão **CUPS em Linux** integrado a um domínio **Samba AD**, p
 
 **5. Painel web (`painel/`)**
 
-- Aplicação Flask interna, com login do AD (LDAPS) e acesso por grupo. Hoje traz **permissões de impressão** (quem pode usar cada impressora, por usuário, departamento, impressora e computador; somente leitura) e **controle do winbind** (saúde, última troca e botão de troca). Veja o [doc 07](docs/07-painel-web.md).
+- Aplicação Flask interna, com login do AD (LDAPS) e acesso por grupo. Hoje traz **permissões de impressão** (quem pode usar cada impressora, por usuário, departamento, impressora e computador), com **alteração dos grupos do AD** direto pelo painel (lista de alterações em lote, aplicada com a senha de quem está logado, sem conta de escrita guardada, e com o computador de cada usuário sugerido pelo GLPI), e **controle do winbind** (saúde, última troca e botão de troca). Veja o [doc 07](docs/07-painel-web.md).
 
 **6. Documentação e lições aprendidas (`docs/`)**
 
@@ -80,6 +83,7 @@ O arquivo do job passa pelo CUPS sem ser convertido, porque o driver Xerox embut
 **Impressora**
 
 - Uma Xerox com PIN de impressão protegida (o projeto usou a **AltaLink C8030**), acessível por IPP.
+- Há também suporte a **HP LaserJet com PostScript, sem PIN e sem cor** (validado na M428f, com o HP Universal Print Driver PS): veja o [doc 08](docs/08-adicionar-impressora-hp.md).
 - Outras marcas exigem testar o que o driver grava no arquivo do job antes de reaproveitar o filtro.
 
 **Domínio e clientes**
@@ -137,6 +141,8 @@ O arquivo do job passa pelo CUPS sem ser convertido, porque o driver Xerox embut
    systemctl daemon-reload && systemctl enable --now cups-recebe-adm-xerox.socket
    ```
 
+Para uma impressora **HP**, o roteiro completo (filtro, receptor, fila, porta e GPO) está no [doc 08](docs/08-adicionar-impressora-hp.md).
+
 ### 2. Clientes Windows (GPO)
 
 1. Coloque o pacote do driver V4 PS (descompactado) numa pasta legível por **Domain Computers** (os exemplos usam `\\empresa.local\NETLOGON\Impressoras\XeroxV4PS`).
@@ -169,6 +175,8 @@ O arquivo do job passa pelo CUPS sem ser convertido, porque o driver Xerox embut
 | A contabilidade parou de gravar, sem erro | Pasta ou log com dono errado (teste feito como root) | `chown lp:lp` na pasta e nos arquivos |
 | As preferências do driver voltaram a colorido e sem PIN | `Rename-Printer` zera os padrões | Crie a fila já com o nome final e só depois aplique os padrões |
 | O PowerShell "como administrador" não vê o domínio nem o `NETLOGON` | O administrador local é uma conta local | Teste com uma tarefa agendada como `SYSTEM` ou com o PowerShell do usuário de domínio |
+| O `pnputil` falha com "fornecedor de um catálogo assinado Authenticode ainda não foi considerado confiável" | O certificado do fabricante do driver não está em Fornecedores Confiáveis | Importe o certificado na GPO (veja o [doc 08](docs/08-adicionar-impressora-hp.md)) |
+| A impressora não aparece depois de incluir o PC no grupo `_PCs` | O grupo de computador só entra no token com o PC reiniciado | Reinicie o PC e confira com `gpresult /scope computer /r` |
 | Não consegue remover fila e driver logo em seguida | O spooler segura os itens | Espere, ou `Restart-Service Spooler` e aguarde ~20 s |
 
 Mais casos em [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md).
@@ -179,7 +187,7 @@ Mais casos em [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md).
 - Cor e cópias refletem o que o driver pediu, não uma análise página a página.
 - O nome do usuário vem do Windows e **não é validado** pelo servidor.
 - Filas raw e drivers PPD são marcados como obsoletos pelo CUPS. No CUPS 2.4 (Ubuntu 24.04) isso não afeta hoje, mas é um risco de longo prazo.
-- O filtro foi validado com Xerox (cabeçalho XPIF). Outras marcas precisam de testes.
+- O filtro foi validado com Xerox (cabeçalho XPIF) e HP (cabeçalho PJL); na HP, a leitura de frente e verso com duplex ligado não foi validada. Outras marcas precisam de testes.
 
 ## Segurança
 
@@ -188,7 +196,8 @@ Mais casos em [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md).
 - Faça **backup do SYSVOL (com permissões)** antes de atualizar o Samba, principalmente se ele foi instalado por tarball.
 - Escreva no `NETLOGON` apenas como administrador do domínio; os computadores só precisam de leitura.
 - A senha da conta de máquina do servidor é trocada automaticamente a cada 7 dias (padrão do Samba) e isso pode quebrar a leitura de grupos: o winbind em execução continua com a senha antiga. Desligue a troca automática e use a [troca controlada](docs/06-troca-controlada-winbind.md).
-- O painel web deve ficar atrás de um proxy que aceite só as redes internas e **nunca** ser exposto à internet. Não versione a senha da conta de leitura nem a chave de sessão.
+- O painel web deve ficar atrás de um proxy que aceite só as redes internas e **nunca** ser exposto à internet. Não versione a senha da conta de leitura, os tokens do GLPI nem a chave de sessão.
+- Os botões de permissão do painel alteram o AD com a **senha de quem está logado**, pedida na hora, sem conta de escrita guardada no servidor. Delegue ao grupo da TI só a escrita da propriedade `member` dos grupos `Impressora_*`; não é preciso ser administrador do domínio (veja o [doc 07](docs/07-painel-web.md)).
 - Nunca versione `impressoras.json` reais, logs de contabilidade, chaves ou certificados (o `.gitignore` já bloqueia esses arquivos).
 
 ## Documentação e roadmap
@@ -199,7 +208,8 @@ Mais casos em [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md).
 - [`docs/04-problemas-comuns.md`](docs/04-problemas-comuns.md): problemas e soluções.
 - [`docs/05-incidente-winbind-senha-de-maquina.md`](docs/05-incidente-winbind-senha-de-maquina.md): estudo de caso.
 - [`docs/06-troca-controlada-winbind.md`](docs/06-troca-controlada-winbind.md): causa confirmada e solução da troca da senha da conta de máquina.
-- [`docs/07-painel-web.md`](docs/07-painel-web.md): painel web (permissões, winbind, instalação).
+- [`docs/07-painel-web.md`](docs/07-painel-web.md): painel web (permissões, alteração dos grupos, GLPI, winbind, instalação).
+- [`docs/08-adicionar-impressora-hp.md`](docs/08-adicionar-impressora-hp.md): como adicionar uma impressora HP (sem PIN e sem cor), do servidor à GPO.
 - [`ROADMAP.md`](ROADMAP.md): melhorias futuras.
 
 A pasta `docs/` está disponível apenas em português.
