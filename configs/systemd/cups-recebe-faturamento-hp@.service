@@ -1,0 +1,9 @@
+[Unit]
+Description=Receptor da fila faturamento-hp (%i)
+
+[Service]
+User=lp
+StandardInput=socket
+StandardOutput=null
+StandardError=journal
+ExecStart=/usr/local/bin/cups-recebe-pjl faturamento-hp

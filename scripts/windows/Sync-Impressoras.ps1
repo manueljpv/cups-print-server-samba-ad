@@ -36,7 +36,8 @@ function LigarPin($nome) {
 }
 function Instalar($p) {
     if (-not (Get-PrinterDriver -Name $p.driver -ErrorAction SilentlyContinue)) {
-        $res = pnputil /add-driver "$($p.pastaDriver)\*.inf" /install 2>&1 | Out-String
+        if ($p.inf) { $alvo = Join-Path $p.pastaDriver $p.inf } else { $alvo = "$($p.pastaDriver)\*.inf" }
+        $res = pnputil /add-driver "$alvo" /install 2>&1 | Out-String
         Log "pnputil: $($res.Trim())"
         Add-PrinterDriver -Name $p.driver -ErrorAction Stop
         Log "Driver registrado: $($p.driver)"
@@ -46,8 +47,9 @@ function Instalar($p) {
         Log "Porta criada: $($p.porta)"
     }
     Add-Printer -Name $p.nome -DriverName $p.driver -PortName $p.porta -ErrorAction Stop
-    Set-PrintConfiguration -PrinterName $p.nome -Color $false -ErrorAction Stop
-    LigarPin $p.nome
+    try { Set-PrintConfiguration -PrinterName $p.nome -Color $false -ErrorAction Stop }
+    catch { Log "AVISO: nao foi possivel definir P&B como padrao em $($p.nome): $_" }
+    if ($p.pin -ne $false) { LigarPin $p.nome }
     Log "Impressora instalada: $($p.nome) (padrao P&B)"
 }
 
@@ -111,10 +113,22 @@ try {
     Log "Usuario $sam; grupos: $($grupos -join ', ')"
 
     $config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    # Grupos do COMPUTADOR (so consulta se alguma impressora do JSON define grupoPCs).
+    # Se a consulta falhar, nao altera nada.
+    $gruposPC = @()
+    if (@($config | Where-Object { $_.grupoPCs }).Count -gt 0) {
+        $pcNome = $env:COMPUTERNAME
+        $pcAchado = ([adsisearcher]"(&(objectClass=computer)(sAMAccountName=$pcNome`$))").FindOne()
+        if (-not $pcAchado) { Log "Computador $pcNome nao encontrado no AD; nada alterado."; return }
+        $gruposPC = @($pcAchado.Properties["memberof"] | ForEach-Object { ($_ -split ',')[0] -replace '^CN=', '' })
+        Log "Computador $pcNome; grupos: $($gruposPC -join ', ')"
+    }
+
     $nomesPermitidos = @()
     foreach ($p in $config) {
         try {
             $permitido = ($grupos -contains $p.grupoAcesso) -or ($grupos -contains $p.grupoCor)
+            if ($p.grupoPCs) { $permitido = $permitido -and ($gruposPC -contains $p.grupoPCs) }
             $existe = Get-Printer -Name $p.nome -ErrorAction SilentlyContinue
             if ($permitido -and -not $existe) { Instalar $p }
             elseif (-not $permitido -and $existe) { Remover $p }

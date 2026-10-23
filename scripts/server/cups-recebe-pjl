@@ -1,0 +1,56 @@
+#!/usr/bin/python3
+# Receptor de porta TCP -> CUPS para impressoras HP (driver HP UPD PS). Le o
+# job PostScript, descobre usuario e titulo no cabecalho PJL e entrega a fila
+# indicada no argumento, passando pelo filtro de contagem da fila.
+import sys, os, re, tempfile, subprocess
+
+LIMITE = 65536
+
+def pjl(nome, texto):
+    m = re.search(r'^@PJL SET %s="([^"]*)"' % nome, texto, re.M)
+    return m.group(1).strip() if m else ""
+
+def pjl_attr(nome, texto):
+    m = re.search(r'^@PJL SET JOBATTR="%s=([^"]*)"' % nome, texto, re.M)
+    return m.group(1).strip() if m else ""
+
+def main():
+    fila = sys.argv[1]
+    origem = os.environ.get("REMOTE_ADDR", "?")
+    fd, caminho = tempfile.mkstemp(prefix="recebe-", dir="/var/tmp")
+    head = b""
+    total = 0
+    try:
+        with os.fdopen(fd, "wb") as f:
+            while True:
+                chunk = sys.stdin.buffer.read(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+                total += len(chunk)
+                if len(head) < LIMITE:
+                    head += chunk[:LIMITE - len(head)]
+        if total == 0:
+            sys.stderr.write("recebe %s de %s: conexao vazia, ignorada\n" % (fila, origem))
+            return
+        h = head.decode("utf-8", "replace")
+        user = pjl("USERNAME", h) or pjl_attr("JobAcct1", h)
+        user = re.sub(r'[^A-Za-z0-9._@-]', '', user) or "desconhecido"
+        titulo = pjl("JOBNAME", h)
+        if not titulo:
+            m = re.search(r'^@PJL JOB NAME="([^"]*)"', h, re.M)
+            titulo = m.group(1).strip() if m else ""
+        titulo = re.sub(r'[\x00-\x1f]', ' ', titulo or "Job porta TCP")[:120]
+        r = subprocess.run(["lp", "-d", fila, "-U", user, "-t", titulo,
+                            "-o", "document-format=application/postscript", caminho],
+                           capture_output=True, text=True)
+        sys.stderr.write("recebe %s de %s: usuario=%s bytes=%d lp=%d %s%s\n" %
+                         (fila, origem, user, total, r.returncode,
+                          r.stdout.strip(), r.stderr.strip()))
+    finally:
+        try:
+            os.unlink(caminho)
+        except OSError:
+            pass
+
+main()

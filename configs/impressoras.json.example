@@ -7,6 +7,20 @@
     "host": "192.0.2.10",
     "portaTcp": 9101,
     "grupoAcesso": "Impressora_Xerox_ADM",
-    "grupoCor": "Impressora_Xerox_ADM_Cor"
+    "grupoCor": "Impressora_Xerox_ADM_Cor",
+    "grupoPCs": "Impressora_Xerox_ADM_PCs",
+    "pin": true
+  },
+  {
+    "nome": "HP LaserJet - Faturamento",
+    "driver": "HP Universal Printing PS (v8.2.0)",
+    "pastaDriver": "\\\\empresa.local\\NETLOGON\\Impressoras\\HPUPDPS",
+    "inf": "hpcu360v.inf",
+    "porta": "IP_192.0.2.10_9102",
+    "host": "192.0.2.10",
+    "portaTcp": 9102,
+    "grupoAcesso": "Impressora_HP_Faturamento",
+    "grupoPCs": "Impressora_HP_Faturamento_PCs",
+    "pin": false
   }
 ]

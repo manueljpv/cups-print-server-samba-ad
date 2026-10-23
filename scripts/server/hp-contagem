@@ -1,0 +1,64 @@
+#!/usr/bin/python3
+# Filtro CUPS para impressoras HP (PostScript, driver HP UPD PS): entrega o
+# arquivo INTACTO para a impressora e grava a contabilidade no mesmo log
+# mensal da Xerox (mesmas 12 colunas).
+# Paginas = %%Pages (final do arquivo). Copias = NumCopies (cabecalho; se nao
+# existir, 1). O relatorio multiplica paginas x copias, como na Xerox.
+import sys, re, os, time
+
+LOG_DIR = "/var/log/cups-contabilidade/"
+LIMITE = 65536
+
+def registrar(job, user, title, head, tail):
+    h = head.decode("latin-1")
+    t = tail.decode("latin-1")
+    pags = re.findall(r'^%%Pages:\s*(\d+)', t, re.M)
+    paginas = pags[-1] if pags else "?"
+    m = re.search(r'^%%BeginNonPPDFeature:\s*NumCopies\s+(\d+)', h, re.M)
+    copias = m.group(1) if m else "1"
+    d = re.search(r'/Duplex\s+(true|false)', h)
+    tb = re.search(r'/Tumble\s+(true|false)', h)
+    if d and d.group(1) == "true":
+        lados = "two-sided-short-edge" if (tb and tb.group(1) == "true") else "two-sided-long-edge"
+    else:
+        lados = "one-sided"
+    fila = os.environ.get("PRINTER", "?")
+    agora = time.strftime("%Y-%m-%d %H:%M:%S")
+    titulo = title.replace("\t", " ").replace("\n", " ")
+    sufixo = ".teste" if fila.startswith("teste") else ""
+    caminho = LOG_DIR + "contagem-%s%s.log" % (agora[:7], sufixo)
+    cor = "monochrome-grayscale"
+    campos = [agora, fila, job, user, paginas, copias, lados, cor, titulo, cor, "ok", "nao-aplica"]
+    with open(caminho, "a", encoding="utf-8", errors="replace") as f:
+        f.write("\t".join(campos) + "\n")
+
+def main():
+    a = sys.argv
+    job = a[1] if len(a) > 1 else "0"
+    user = a[2] if len(a) > 2 else "?"
+    title = a[3] if len(a) > 3 else ""
+    src = open(a[6], "rb") if len(a) > 6 else sys.stdin.buffer
+    out = sys.stdout.buffer
+
+    head = b""
+    while len(head) < LIMITE:
+        chunk = src.read(LIMITE - len(head))
+        if not chunk:
+            break
+        head += chunk
+
+    out.write(head)
+    tail = head
+    while True:
+        chunk = src.read(65536)
+        if not chunk:
+            break
+        out.write(chunk)
+        tail = (tail + chunk)[-LIMITE:]
+    out.flush()
+    try:
+        registrar(job, user, title, head, tail)
+    except Exception as e:
+        sys.stderr.write("DEBUG: contagem falhou: %s\n" % e)
+
+main()

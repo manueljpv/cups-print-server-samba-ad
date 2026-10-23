@@ -1,4 +1,6 @@
-# Salvar como /etc/systemd/system/cups-recebe-adm-xerox.socket.d/ip.conf
+# Salvar como /etc/systemd/system/<nome-do-socket>.socket.d/ip.conf
+# Exemplos: cups-recebe-adm-xerox.socket.d/ip.conf e cups-recebe-faturamento-hp.socket.d/ip.conf
+# Todo receptor de porta TCP novo precisa deste mesmo drop-in (um por socket).
 # Restringe quem pode conectar na porta do receptor (sub-redes de exemplo).
 [Socket]
 IPAddressDeny=any
